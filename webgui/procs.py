@@ -54,6 +54,10 @@ def procs():
                         name = os.path.basename(p.cmdline[0])
                     except:
                         name = p.name
+                is_lxc = False
+                if 'lxc ' in name:
+                    is_lxc = True
+                    name = name.replace('lxc ', 'container ')
                 proc = {
                     # name and ppid are either functions or variables in
                     # different versions of psutil.
@@ -61,6 +65,7 @@ def procs():
                     "id": p.pid,
                     "parent": p.ppid() if callable(p.ppid) else p.ppid,
                     "children": [],
+                    "is_lxc": is_lxc,
                 }
 
                 if p.pid == 1:
@@ -90,6 +95,8 @@ def procs():
 
         for childProc in flatprocs:
             if "parent" in childProc and childProc["parent"] == proc["id"]:
+                if proc["is_lxc"] == True:
+                    childProc["is_lxc"] = True
                 proc["children"].append(childProc)
             else:
                 remainder.append(childProc)

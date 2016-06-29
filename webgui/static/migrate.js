@@ -29,21 +29,78 @@ function migrate(proc, source, target) {
     return;
   }
 
-  /* Add an alert to let the user know that the migration has started. */
-  var alert = insertAlert();
-  alert.classed("alert-info", true);
+  if (proc.is_lxc)
+  {
+      /* Add an alert to let the user know that the migration has started. */
+      var cname = proc.name.replace(' ', '').replace('container', '').replace('lxc', '');
+      var alert = insertAlert();
+      alert.classed("alert-info", true);
+      var p = alert.append("p");
+      p.append("b").text("Info: ");
+      p.append("span").text("Migrating container ");
+      p.append("code").text(cname);
+      p.append("span");
+      p.append("span").text(" from ");
+      p.append("code").text(source.name);
+      p.append("span").text(" to ");
+      p.append("code").text(target.name);
+      _migrate_container(cname, source, target);
+  } else {
+      /* Add an alert to let the user know that the migration has started. */
+      var alert = insertAlert();
+      alert.classed("alert-info", true);
+      var p = alert.append("p");
+      p.append("b").text("Info: ");
+      p.append("span").text("Migrating ");
+      p.append("code").text(stringifyProc(proc));
+      p.append("span");
+      p.append("span").text(" from ");
+      p.append("code").text(source.name);
+      p.append("span").text(" to ");
+      p.append("code").text(target.name);
 
-  var p = alert.append("p");
-  p.append("b").text("Info: ");
-  p.append("span").text("Migrating ");
-  p.append("code").text(stringifyProc(proc));
-  p.append("span");
-  p.append("span").text(" from ");
-  p.append("code").text(source.name);
-  p.append("span").text(" to ");
-  p.append("code").text(target.name);
+      _migrate(proc, source, target);
+  }
+}
 
-  _migrate(proc, source, target);
+function _migrate_container(container, source, target) {
+  var req = new XMLHttpRequest();
+
+  req.onload = function() {
+    console.log(this.responseText);
+    var resp = JSON.parse(this.responseText);
+
+    /* Add an alert to the page with info on the result of the dump. */
+    var alert = insertAlert();
+    var p = alert.append("p");
+
+    if (!resp.succeeded) {
+      alert.classed("alert-danger", true);
+
+      p.append("b").text("Migration Failed: ");
+      p.append("span").text("There was a problem migrating ");
+      p.append("code").text(container);
+      p.append("span").text(" from " );
+      p.append("code").text(source.name);
+
+      alert.append("br");
+      alert.append("pre").text(resp.why);
+    } else {
+      var req = new XMLHttpRequest();
+      req.open("get", target.address + "/migrate-lxc-rx?cname=" + container, true);
+      req.send();
+      alert.classed("alert-success", true);
+      p.append("b").text("Migration Succeded! Moved container ");
+      p.append("code").text(container);
+      p.append("span");
+      p.append("span").text(" from ");
+      p.append("code").text(source.name);
+      p.append("span").text(" to ");
+      p.append("code").text(target.name);
+    }
+  };
+  req.open("get", source.address + "/migrate-lxc-tx?cname=" + container, true);
+  req.send();
 }
 
 function _migrate(proc, source, target) {
@@ -68,6 +125,15 @@ function _migrate(proc, source, target) {
 
       alert.append("br");
       alert.append("pre").text(resp.why);
+    } else {
+      alert.classed("alert-success", true);
+      p.append("b").text("Migration Succeded! Moved ");
+      p.append("code").text(stringifyProc(proc));
+      p.append("span");
+      p.append("span").text(" from ");
+      p.append("code").text(source.name);
+      p.append("span").text(" to ");
+      p.append("code").text(target.name);
     }
   };
 

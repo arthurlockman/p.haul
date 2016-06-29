@@ -16,11 +16,11 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-var nodeLabelOffset = { x:6, y:3 };
+var nodeLabelOffset = { x:9, y:5 };
 var diagonal = d3.svg.diagonal().projection(function(d) { return [ d.y, d.x ]; });
 var dragging = false;
 var tree = d3.layout.tree()
-    .nodeSize([16, 200])
+    .nodeSize([18, 250])
     .children(function(d) { return d.children; })
     .sort(function(a, b) { return d3.ascending(a.name, b.name); });
 
@@ -182,10 +182,13 @@ PSTree.prototype.redraw = function(e) {
         d3.select(this).select("text.node-label").text(function(d) { return d.name; });
       });
 
-  nodeGroups.append("circle").attr({r: 3.0});
+  nodeGroups.append("circle")
+      .attr("r", 6.0)
+      .classed("lxc-circle", function(d) { return d.is_lxc; });
   nodeGroups.append("text")
       .attr(nodeLabelOffset)
-      .classed("node-label", true);
+      .classed("node-label", true)
+      .classed("lxc-label", function(d) { return d.is_lxc; });
 
   nodes
       .transition()
@@ -207,20 +210,24 @@ PSTree.prototype.redraw = function(e) {
   var links = this.linkGroup.selectAll("path.link").data(linkData, function(d) { return d.target.id; });
 
   /* Links are drawn as SVG paths using d3's svg.diagonal helper. */
-  links.enter()
-      .append("path")
-      .attr("class", "link")
-      .style("opacity", 0);
+  /* Update the links between the nodes with the latest data. */
+    var linkData = tree.links(nodeData);
+      var links = this.linkGroup.selectAll("path.link").data(linkData, function(d) { return d.target.id; });
 
-  links
-      .transition()
-      .duration(200)
-      .attr("d", diagonal)
-      .style("opacity", 1);
+        /* Links are drawn as SVG paths using d3's svg.diagonal helper. */
+        links.enter()
+             .append("path")
+             .attr("class", "link")
+             .style("opacity", 0);
 
-  links.exit()
-      .transition()
-      .duration(200)
-      .style("opacity", 0)
-      .remove();
+        links.transition()
+             .duration(200)
+             .attr("d", diagonal)
+             .style("opacity", 1);
+
+        links.exit()
+             .transition()
+             .duration(200)
+             .style("opacity", 0)
+             .remove();
 };

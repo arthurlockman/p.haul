@@ -96,6 +96,42 @@ def migrate():
     return flask.jsonify({"succeeded": True})
 
 
+@APP.route('/migrate-lxc-tx')
+def migrate_lxc():
+    """
+    Attempt to migrate an LXC container, where the PID is given in the URL.
+    parameter "pid"
+    """
+    cname = flask.request.args.get('cname')
+
+    print "Migrating container " + cname
+
+    dest_host = partner, rpc_port
+    cleanup_command = "rm -rf /tmp/" + cname
+    os.system(cleanup_command)
+    lxc_command = "lxc-checkpoint -n " + cname + " -D /tmp/" + cname + " -vvvv -s"
+    os.system(lxc_command)
+    rsync_command = "rsync -a /var/lib/lxc/" + cname + " " + partner + ":/var/lib/lxc"
+    os.system(rsync_command)
+    rsync_command = "rsync -a /tmp/" + cname + "/ " + partner + ":/tmp/" + cname + "/"
+    os.system(rsync_command)
+    ucarp_command = "killall -USR2 ucarp"
+    os.system(ucarp_command)
+    return flask.jsonify({"succeeded": True})
+
+
+@APP.route('/migrate-lxc-rx')
+def migrate_lxc_rx():
+    """
+    Receive a migrated LXC container.
+    parameter "cname" container name
+    """
+    cname = flask.request.args.get('cname')
+    lxc_command = "lxc-checkpoint -n " + cname + " -D /tmp/" + cname + " -vvvv -r"
+    os.system(lxc_command)
+    return flask.jsonify({"succeeded": True})
+
+
 def start_web_gui(migration_partner, _rpc_port, _debug=False):
     global partner
     global myself
