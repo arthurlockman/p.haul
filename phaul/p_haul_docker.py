@@ -19,6 +19,7 @@ import fs_haul_subtree
 
 # Some constants for docker
 docker_bin = "/usr/bin/docker"
+dockerd_bin = "/usr/bin/dockerd"
 docker_dir = "/var/lib/docker/"
 docker_run_meta_dir = "/var/run/docker/execdriver/native"
 
@@ -55,8 +56,8 @@ class p_haul_type(object):
 		# migrated: (1) root filesystem, (2) container configuration,
 		# (3) runtime meta state, (4) container rootfs base
 		# this tool assumes that the docker container is running with the "overlay" fs driver
-		self._ct_config_dir = os.path.join(docker_dir, "aufs/mnt", self.full_ctid)
 		self._ct_rootfs = os.path.join(docker_dir, "overlay", self.full_ctid)
+		self._ct_config_dir = os.path.join(docker_dir, "containers", self.full_ctid)
 		self._ct_run_meta_dir = os.path.join(docker_run_meta_dir, self.full_ctid)
 		logging.info("Container rootfs: %s", self._ct_rootfs)
 		logging.info("Container config: %s", self._ct_config_dir)
@@ -84,6 +85,11 @@ class p_haul_type(object):
 		return None
 
 	def get_full_ctid(self):
+		"""
+		Collecting full CTID data from the docker 
+		command line. This method calls the docker inspect
+		command to retrieve the full CTID.
+		"""
 		with open("/tmp/docker_checkpoint.log", "w+") as logf:
 			full_ctid = sp.check_output([docker_bin, "inspect", '--format="{{.Id}}"', self._ctid], 
 				stderr=logf).decode('ascii').strip().replace('"', '')
@@ -103,6 +109,7 @@ class p_haul_type(object):
 
 		logf = open("/tmp/docker_checkpoint.log", "w+")
 		self._checkpoint_name = str(uuid.uuid4())
+		# Checkpoint with the new checkpoint API
 		ret = sp.call([docker_bin, "checkpoint", "create", self._ctid, self._checkpoint_name],
 					stdout=logf, stderr=logf)
 		if ret != 0:
@@ -130,7 +137,7 @@ class p_haul_type(object):
 		pd.wait()
 
 	def kill_last_docker_daemon(self):
-		p = sp.Popen(['pgrep', '-l', docker_bin], stdout=sp.PIPE)
+		p = sp.Popen(['pgrep', '-l', 'dockerd'], stdout=sp.PIPE)
 		out, err = p.communicate()
 
 		for line in out.splitlines():
@@ -155,8 +162,7 @@ class p_haul_type(object):
 		self.kill_last_docker_daemon()
 
 		# start docker daemon in background
-		sp.Popen([docker_bin, "daemon", "-s", "aufs"],
-				stdout=logf, stderr=logf)
+		sp.Popen([dockerd_bin], stdout=logf, stderr=logf)
 		# daemon.wait() TODO(dguryanov): docker daemon not return
 		time.sleep(2)
 
