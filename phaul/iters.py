@@ -2,15 +2,16 @@
 # The P.HAUL core -- the class that drives migration
 #
 
+import errno
 import logging
-import images
-import mstats
-import xem_rpc_client
+
 import criu_api
 import criu_cr
 import criu_req
 import htype
-import errno
+import images
+import mstats
+import xem_rpc_client
 
 
 MIGRATION_MODE_LIVE = "live"
@@ -32,7 +33,7 @@ def is_restart_mode(mode):
 	return mode == MIGRATION_MODE_RESTART
 
 
-class iter_consts:
+class iter_consts(object):
 	"""Constants for iterations management"""
 
 	# Maximum number of iterations
@@ -48,11 +49,12 @@ class iter_consts:
 	MAX_ITER_GROW_RATE = 10
 
 
-class phaul_iter_worker:
-	def __init__(self, p_type, dst_id, mode, connection):
+class phaul_iter_worker(object):
+	def __init__(self, p_type, dst_id, mode, connection, nostart):
 		self.__mode = mode
 		self.connection = connection
 		self.target_host = xem_rpc_client.rpc_proxy(self.connection.rpc_sk)
+		self.nostart = nostart
 
 		logging.info("Setting up local")
 		self.htype = htype.get_src(p_type)
@@ -139,17 +141,17 @@ class phaul_iter_worker:
 			try:
 				# Detect is memory tracking supported
 				use_pre_dumps = (self.__check_support_mem_track() and
-					self.htype.can_pre_dump())
+								self.htype.can_pre_dump())
 				logging.info("\t`- Auto %s",
-					(use_pre_dumps and "enabled" or "disabled"))
-			except:
+						(use_pre_dumps and "enabled" or "disabled"))
+			except Exception:
 				# Memory tracking auto detection not supported
 				use_pre_dumps = False
 				logging.info("\t`- Auto detection not possible - Disabled")
 		else:
 			use_pre_dumps = self.__pre_dump
 			logging.info("\t`- Explicitly %s",
-				(use_pre_dumps and "enabled" or "disabled"))
+						(use_pre_dumps and "enabled" or "disabled"))
 		self.criu_connection.memory_tracking(use_pre_dumps)
 		return use_pre_dumps
 
@@ -163,8 +165,7 @@ class phaul_iter_worker:
 			raise Exception("Unknown migration mode")
 
 	def __start_live_migration(self):
-		"""
-		Start migration in live mode
+		"""Start migration in live mode
 
 		Migrate memory and fs to target host iteratively while possible,
 		checkpoint process tree on source host and restore it on target host.
@@ -194,7 +195,7 @@ class phaul_iter_worker:
 			self.target_host.start_iter(True)
 			self.img.new_image_dir()
 			criu_cr.criu_predump(self.htype, root_pid, self.img,
-				self.criu_connection, self.fs)
+								self.criu_connection, self.fs)
 			self.target_host.end_iter()
 
 			# Handle FS migration iteration
@@ -204,7 +205,8 @@ class phaul_iter_worker:
 			migration_stats.handle_iteration(dstats, fsstats)
 
 			# Decide whether we continue iteration or stop and do final dump
-			if not self.__check_live_iter_progress(iter_index, dstats, prev_dstats):
+			if not self.__check_live_iter_progress(iter_index, dstats,
+												prev_dstats):
 				break
 
 			iter_index += 1
@@ -214,7 +216,8 @@ class phaul_iter_worker:
 		logging.info("Final dump and restore")
 		self.target_host.start_iter(self.htype.dump_need_page_server())
 		self.img.new_image_dir()
-		self.htype.final_dump(root_pid, self.img, self.criu_connection, self.fs)
+		self.htype.final_dump(root_pid, self.img,
+							self.criu_connection, self.fs)
 		self.target_host.end_iter()
 
 		try:
@@ -222,13 +225,13 @@ class phaul_iter_worker:
 			logging.info("Final FS and images sync")
 			fsstats = self.fs.stop_migration()
 			self.img.sync_imgs_to_target(self.target_host, self.htype,
-				self.connection.mem_sk)
+										self.connection.mem_sk)
 
 			# Restore htype on target
 			logging.info("Asking target host to restore")
 			self.target_host.restore_from_images()
 
-		except:
+		except Exception:
 			self.htype.migration_fail(self.fs)
 			raise
 
@@ -252,8 +255,7 @@ class phaul_iter_worker:
 			logging.warning("Exception during final cleanup: %s", e)
 
 	def __start_restart_migration(self):
-		"""
-		Start migration in restart mode
+		"""Start migration in restart mode
 
 		Migrate fs to target host iteratively while possible, stop process
 		tree on source host and start it on target host.
@@ -278,7 +280,8 @@ class phaul_iter_worker:
 			migration_stats.handle_iteration(fsstats)
 
 			# Decide whether we continue iteration or stop and do final sync
-			if not self.__check_restart_iter_progress(iter_index, fsstats, prev_fsstats):
+			if not self.__check_restart_iter_progress(iter_index, fsstats,
+													prev_fsstats):
 				break
 
 			iter_index += 1
@@ -294,11 +297,14 @@ class phaul_iter_worker:
 			fsstats = self.fs.stop_migration()
 			migration_stats.handle_iteration(fsstats)
 
-			# Start htype on target
-			logging.info("Asking target host to start")
-			self.target_host.start_htype()
+			# umount before start on target, or we fail on vzstorage
+			self.htype.umount()
 
-		except:
+			if not self.nostart:
+				# Start htype on target
+				logging.info("Asking target host to start")
+				self.target_host.start_htype()
+		except Exception:
 			self.htype.migration_fail(self.fs)
 			self.htype.start()
 			raise
@@ -321,7 +327,7 @@ class phaul_iter_worker:
 
 		if prev_dstats:
 			grow_rate = self.__calc_grow_rate(dstats.pages_written,
-				prev_dstats.pages_written)
+											prev_dstats.pages_written)
 			if grow_rate > iter_consts.MAX_ITER_GROW_RATE:
 				logging.info("\t> Iteration grows")
 				return False
@@ -343,7 +349,7 @@ class phaul_iter_worker:
 
 		if prev_fsstats:
 			grow_rate = self.__calc_grow_rate(fsstats.bytes_xferred,
-				prev_fsstats.bytes_xferred)
+											prev_fsstats.bytes_xferred)
 			if grow_rate > iter_consts.MAX_ITER_GROW_RATE:
 				logging.info("\t> Iteration grows")
 				return False
