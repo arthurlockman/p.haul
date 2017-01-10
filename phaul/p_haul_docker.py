@@ -9,6 +9,7 @@ import signal
 import subprocess as sp
 from subprocess import PIPE
 import time
+import uuid
 
 import fs_haul_subtree
 
@@ -54,12 +55,9 @@ class p_haul_type(object):
 		# migrated: (1) root filesystem, (2) container configuration,
 		# (3) runtime meta state, (4) container rootfs base
 		# this tool assumes that the docker container is running with the "overlay" fs driver
-			docker_dir, "aufs/mnt", self.full_ctid)
-		self._ct_config_dir = os.path.join(
+		self._ct_config_dir = os.path.join(docker_dir, "aufs/mnt", self.full_ctid)
 		self._ct_rootfs = os.path.join(docker_dir, "overlay", self.full_ctid)
-			docker_dir, "containers", self.full_ctid)
-		self._ct_run_meta_dir = os.path.join(
-			docker_run_meta_dir, self.full_ctid)
+		self._ct_run_meta_dir = os.path.join(docker_run_meta_dir, self.full_ctid)
 		logging.info("Container rootfs: %s", self._ct_rootfs)
 		logging.info("Container config: %s", self._ct_config_dir)
 		logging.info("Container meta: %s", self._ct_run_meta_dir)
@@ -86,19 +84,11 @@ class p_haul_type(object):
 		return None
 
 	def get_full_ctid(self):
-		dir_name_list = os.listdir(os.path.join(docker_dir, "containers"))
+		with open("/tmp/docker_checkpoint.log", "w+") as logf:
+			full_ctid = sp.check_output([docker_bin, "inspect", '--format="{{.Id}}"', self._ctid], 
+				stderr=logf).decode('ascii').strip().replace('"', '')
+			return full_ctid
 
-		full_id = ""
-		for name in dir_name_list:
-			name = name.rsplit("/")
-			if (name[0].find(self._ctid) == 0):
-				full_id = name[0]
-				break
-
-		if full_id != "":
-			return full_id
-		else:
-			raise Exception("Can not find container fs")
 
 	def final_dump(self, pid, img, ccon, fs):
 		logging.info("Dump docker container %s", pid)
@@ -108,20 +98,15 @@ class p_haul_type(object):
 		# cli = docker.Client(base_url='unix://var/run/docker.sock')
 		# output = cli.info()
 		# call docker API
+		# Supported in docker experimental
+		# see https://github.com/docker/docker/blob/master/experimental/checkpoint-restore.md
 
 		logf = open("/tmp/docker_checkpoint.log", "w+")
-		ret = sp.call([docker_bin, "checkpoint", image_path_opt, self._ctid],
+		self._checkpoint_name = str(uuid.uuid4())
+		ret = sp.call([docker_bin, "checkpoint", "create", self._ctid, self._checkpoint_name],
 					stdout=logf, stderr=logf)
 		if ret != 0:
 			raise Exception("docker checkpoint failed")
-
-	def get_overlay_fs_paths(self):
-		"""
-		Collect the pats of the rootfs components in the overlay file system.
-		"""
-		# TODO parse json output of 'docker inspect container'
-		# TODO pull info about fs components from inspect
-		# TODO return info about each of the components and where to move them to
 
 	#
 	# Meta-images for docker -- /var/run/docker
